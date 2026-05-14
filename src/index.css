@@ -1,0 +1,138 @@
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Work+Sans:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-display-temp: "Hanken Grotesk", sans-serif;
+  --font-headline: "Hanken Grotesk", sans-serif;
+  --font-body: "Work Sans", sans-serif;
+  --font-label: "Inter", sans-serif;
+
+  --color-surface: #f8f9ff;
+  --color-surface-dim: #d7dae2;
+  --color-surface-bright: #f8f9ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f1f3fc;
+  --color-surface-container: #ebeef6;
+  --color-surface-container-high: #e5e8f0;
+  --color-surface-container-highest: #e0e2ea;
+  --color-on-surface: #181c22;
+  --color-on-surface-variant: #404752;
+  --color-inverse-surface: #2d3137;
+  --color-inverse-on-surface: #eef0f9;
+  --color-outline: #707783;
+  --color-outline-variant: #c0c7d4;
+  --color-surface-tint: #0060a8;
+  --color-primary: #005ea4;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #0077ce;
+  --color-on-primary-container: #fdfcff;
+  --color-inverse-primary: #a2c9ff;
+  --color-secondary: #006e1c;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #98f994;
+  --color-on-secondary-container: #0c7521;
+  --color-tertiary: #8c4c00;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #b06000;
+  --color-on-tertiary-container: #fffbff;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-primary-fixed: #d3e4ff;
+  --color-primary-fixed-dim: #a2c9ff;
+  --color-on-primary-fixed: #001c38;
+  --color-on-primary-fixed-variant: #004881;
+  --color-secondary-fixed: #98f994;
+  --color-secondary-fixed-dim: #7ddc7a;
+  --color-on-secondary-fixed: #002204;
+  --color-on-secondary-fixed-variant: #005313;
+  --color-tertiary-fixed: #ffdcc2;
+  --color-tertiary-fixed-dim: #ffb77b;
+  --color-on-tertiary-fixed: #2e1500;
+  --color-on-tertiary-fixed-variant: #6d3a00;
+  --color-background: #f8f9ff;
+  --color-on-background: #181c22;
+  --color-surface-variant: #e0e2ea;
+
+  --radius-xl: 1.5rem;
+  --radius-lg: 1rem;
+  --radius-md: 0.75rem;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-background font-body min-h-screen overflow-x-hidden;
+  }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/60 backdrop-blur-md border border-white/30;
+  }
+  .nav-blur {
+    @apply bg-white/60 backdrop-blur-2xl border-t border-outline-variant/20;
+  }
+  .marquee-container {
+    @apply overflow-hidden whitespace-nowrap;
+  }
+  .marquee-content {
+    @apply inline-block;
+    animation: marquee 20s linear infinite;
+  }
+}
+
+@keyframes marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Leaflet地图样式修复 */
+#flood-map {
+  position: relative;
+  z-index: 0;
+}
+
+#flood-map .leaflet-container {
+  background: #e0f2fe;
+}
+
+#flood-map .leaflet-control-zoom,
+#flood-map .leaflet-control-attribution {
+  z-index: 10 !important;
+}
+
+/* 自定义标记样式 */
+.custom-marker {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+/* Leaflet弹窗样式 */
+#flood-map .leaflet-popup-content-wrapper {
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+#flood-map .leaflet-popup-tip {
+  background: white;
+}
+
+/* glass-card样式 */
+.glass-card {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+}
+

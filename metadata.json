@@ -1,0 +1,12 @@
+{
+  "name": "天津交通气象哨兵",
+  "description": "Transit Sentinel - 企业级交通气象综合指挥平台。通过 AI 实时监控地铁图及高速路网天气，为城市动脉保驾护航。",
+  "requestFramePermissions": [
+    "location"
+  ],
+  "majorCapabilities": [
+    "Weather Forecasting",
+    "Eco-Health Monitoring",
+    "AI Virtual Assistant"
+  ]
+}

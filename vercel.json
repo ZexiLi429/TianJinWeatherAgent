@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/nmc/:path*",
+      "destination": "https://www.nmc.cn/:path*"
+    }
+  ]
+}
