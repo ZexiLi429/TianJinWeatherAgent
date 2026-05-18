@@ -8,3 +8,7 @@ coverage/
 
 .vercel
 .env*.local
+
+# 不上传的本地文档
+论文内容_5.3_5.4.html
+DATA_INTEGRATION_GUIDE.md
