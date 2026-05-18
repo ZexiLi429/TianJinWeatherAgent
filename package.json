@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cf:login": "wrangler login",
+    "cf:deploy": "wrangler pages deploy dist --project-name tianjin-weather-sentinel",
+    "cf:deploy:prod": "wrangler pages deploy dist --project-name tianjin-weather-sentinel --branch main"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
@@ -34,6 +37,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wrangler": "^4.92.0"
   }
 }

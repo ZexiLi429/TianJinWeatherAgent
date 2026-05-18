@@ -1,3 +1,5 @@
+import { getCachedValue } from './cacheService';
+
 // Open-Meteo 实时天气（免费，无需 API Key）
 
 // 各区坐标
@@ -23,6 +25,38 @@ const DISTRICT_COORDS: Record<string, [number, number]> = {
 // 默认坐标（和平区/市中心）
 const DEFAULT_LAT = 39.1176;
 const DEFAULT_LON = 117.1956;
+
+function toRad(deg: number): number {
+  return (deg * Math.PI) / 180;
+}
+
+function distanceKm(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const r = 6371;
+  const dLat = toRad(bLat - aLat);
+  const dLon = toRad(bLon - aLon);
+  const lat1 = toRad(aLat);
+  const lat2 = toRad(bLat);
+
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+export function getNearestDistrictName(lat: number, lon: number): string {
+  let nearest = '和平区';
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const [district, [districtLat, districtLon]] of Object.entries(DISTRICT_COORDS)) {
+    const currentDistance = distanceKm(lat, lon, districtLat, districtLon);
+    if (currentDistance < nearestDistance) {
+      nearestDistance = currentDistance;
+      nearest = district;
+    }
+  }
+
+  return nearest;
+}
 
 export interface CurrentWeather {
   temp: number;           // 实际气温 °C
@@ -92,35 +126,47 @@ export async function fetchCurrentWeather(district?: string): Promise<CurrentWea
     ? DISTRICT_COORDS[district]
     : [DEFAULT_LAT, DEFAULT_LON];
 
-  const [weatherRes, aqiRes] = await Promise.allSettled([
-    fetch(
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-      `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code` +
-      `&timezone=Asia%2FShanghai`
-    ).then((r) => r.json()),
-    fetch(
-      `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
-      `&current=european_aqi&timezone=Asia%2FShanghai`
-    ).then((r) => r.json()),
-  ]);
+  return fetchCurrentWeatherByCoords(lat, lon);
+}
 
-  if (weatherRes.status !== 'fulfilled') throw new Error('天气数据获取失败');
-  const w = weatherRes.value.current;
+export async function fetchCurrentWeatherByCoords(lat: number, lon: number): Promise<CurrentWeather> {
+  const cacheKey = `weather:${lat.toFixed(3)}:${lon.toFixed(3)}`;
 
-  const aqi =
-    aqiRes.status === 'fulfilled' && aqiRes.value?.current?.european_aqi != null
-      ? Math.round(aqiRes.value.current.european_aqi)
-      : null;
+  return getCachedValue(
+    cacheKey,
+    async () => {
+      const [weatherRes, aqiRes] = await Promise.allSettled([
+        fetch(
+          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+          `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code` +
+          `&timezone=Asia%2FShanghai`
+        ).then((r) => r.json()),
+        fetch(
+          `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}` +
+          `&current=european_aqi&timezone=Asia%2FShanghai`
+        ).then((r) => r.json()),
+      ]);
 
-  return {
-    temp: Math.round(w.temperature_2m),
-    feelsLike: Math.round(w.apparent_temperature),
-    humidity: Math.round(w.relative_humidity_2m),
-    windSpeed: w.wind_speed_10m,
-    windDirection: w.wind_direction_10m,
-    weatherCode: w.weather_code,
-    aqi,
-  };
+      if (weatherRes.status !== 'fulfilled') throw new Error('天气数据获取失败');
+      const w = weatherRes.value.current;
+
+      const aqi =
+        aqiRes.status === 'fulfilled' && aqiRes.value?.current?.european_aqi != null
+          ? Math.round(aqiRes.value.current.european_aqi)
+          : null;
+
+      return {
+        temp: Math.round(w.temperature_2m),
+        feelsLike: Math.round(w.apparent_temperature),
+        humidity: Math.round(w.relative_humidity_2m),
+        windSpeed: w.wind_speed_10m,
+        windDirection: w.wind_direction_10m,
+        weatherCode: w.weather_code,
+        aqi,
+      };
+    },
+    { ttlMs: 30 * 60 * 1000, refreshAheadMs: 5 * 60 * 1000 }
+  );
 }
 
 export async function fetchTemperatureTrend(district?: string, days: number = 7): Promise<TemperatureTrendPoint[]> {

@@ -70,7 +70,7 @@ interface TrafficViewProps {
   onBack: () => void;
 }
 
-const METRO_LINES = [
+export const METRO_LINES = [
   { id: 'l1', name: '1号线', color: '#e11d48' },
   { id: 'l2', name: '2号线', color: '#f59e0b' },
   { id: 'l3', name: '3号线', color: '#0284c7' },
@@ -86,7 +86,7 @@ const METRO_LINES = [
   { id: 'jj', name: '津静线', color: '#10b981' },
 ];
 
-const METRO_STATIONS: MetroStation[] = [
+export const METRO_STATIONS: MetroStation[] = [
   {
     id: 'm1',
     name: '刘园',
@@ -596,7 +596,7 @@ const METRO_STATIONS: MetroStation[] = [
   },
 ];
 
-const HIGHWAY_NODES: HighwayNode[] = [
+export const HIGHWAY_NODES: HighwayNode[] = [
   {
     id: 'h1',
     name: 'G1 京哈高速 宝坻段',

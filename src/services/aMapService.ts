@@ -1,3 +1,5 @@
+import { getCachedValue } from './cacheService';
+
 /**
  * 高德地图 API 服务
  * 用于获取：实时路况、积水预警、交通指数等
@@ -21,6 +23,82 @@ export interface FloodWarning {
   updateTime: string;
 }
 
+export interface AmapPlace {
+  id: string;
+  name: string;
+  address: string;
+  district: string;
+  cityname: string;
+  location: { lat: number; lng: number };
+  type: string;
+}
+
+function getAmapApiKey(): string {
+  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_AMAP_API_KEY || '';
+}
+
+async function fetchAmapTextPlaces(params: {
+  keywords: string;
+  city?: string;
+  types?: string;
+  offset?: number;
+  page?: number;
+}): Promise<AmapPlace[]> {
+  const apiKey = getAmapApiKey();
+  if (!apiKey) return [];
+
+  const cacheKey = `amap:place:${params.city || '天津'}:${params.types || 'any'}:${params.page || 1}:${params.offset || 20}:${params.keywords}`;
+
+  return getCachedValue(
+    cacheKey,
+    async () => {
+      const searchParams = new URLSearchParams({
+        keywords: params.keywords,
+        city: params.city || '天津',
+        citylimit: 'true',
+        offset: String(params.offset || 20),
+        page: String(params.page || 1),
+        key: apiKey,
+        extensions: 'base',
+      });
+
+      if (params.types) {
+        searchParams.set('types', params.types);
+      }
+
+      try {
+        const response = await fetch(`/api/amap/v3/place/text?${searchParams.toString()}`);
+        const data = await response.json();
+        const pois = Array.isArray(data?.pois) ? data.pois : [];
+
+        return pois
+          .map((poi: any) => {
+            const [lng, lat] = String(poi?.location || '')
+              .split(',')
+              .map((value: string) => Number(value.trim()));
+
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+            return {
+              id: String(poi.id || `${poi.name}-${poi.location}`),
+              name: String(poi.name || ''),
+              address: String(poi.address || ''),
+              district: String(poi.adname || poi.district || ''),
+              cityname: String(poi.cityname || params.city || '天津'),
+              location: { lat, lng },
+              type: String(poi.type || ''),
+            } satisfies AmapPlace;
+          })
+          .filter(Boolean) as AmapPlace[];
+      } catch (error) {
+        console.error('高德地点搜索失败:', error);
+        return [];
+      }
+    },
+    { ttlMs: 30 * 60 * 1000, refreshAheadMs: 5 * 60 * 1000 }
+  );
+}
+
 /**
  * 获取城市交通指数
  * 需要配置 VITE_AMAP_API_KEY
@@ -30,59 +108,137 @@ export async function fetchTrafficIndex(city: string = '天津'): Promise<{
   level: string; // 畅通、缓行、拥堵、严重拥堵
   description: string;
 }> {
-  const apiKey = import.meta.env.VITE_AMAP_API_KEY;
-  if (!apiKey) {
-    return {
-      index: 5,
-      level: '中等',
-      description: '未配置高德地图 API Key',
-    };
-  }
-
-  try {
-    const response = await fetch(
-      `https://restapi.amap.com/v1/traffic/status?city=${encodeURIComponent(city)}&key=${apiKey}`
-    );
-    const data = await response.json();
-
-    if (data.status === '1' && data.trafficinfo) {
-      // 计算平均拥堵程度
-      const items = data.trafficinfo;
-      const avgSpeed = items.reduce((sum: number, item: any) => sum + (item.speed || 0), 0) / items.length;
-      
-      let level = '畅通';
-      let index = 1;
-      if (avgSpeed < 10) {
-        level = '严重拥堵';
-        index = 9;
-      } else if (avgSpeed < 20) {
-        level = '拥堵';
-        index = 7;
-      } else if (avgSpeed < 30) {
-        level = '缓行';
-        index = 5;
+  return getCachedValue(
+    `traffic:index:${city}`,
+    async () => {
+      const apiKey = getAmapApiKey();
+      if (!apiKey) {
+        return {
+          index: 5,
+          level: '中等',
+          description: '未配置高德地图 API Key',
+        };
       }
 
-      return {
-        index,
-        level,
-        description: `平均速度 ${Math.round(avgSpeed)} km/h`,
-      };
-    }
+      try {
+        const response = await fetch(
+          `/api/amap/v1/traffic/status?city=${encodeURIComponent(city)}&key=${apiKey}`
+        );
+        const data = await response.json();
 
-    return {
-      index: 5,
-      level: '未知',
-      description: '暂无数据',
-    };
-  } catch (error) {
-    console.error('交通指数获取失败:', error);
-    return {
-      index: 5,
-      level: '暂无',
-      description: '获取失败',
-    };
-  }
+        if (data.status === '1' && data.trafficinfo) {
+          const items = data.trafficinfo;
+          const avgSpeed = items.reduce((sum: number, item: any) => sum + (item.speed || 0), 0) / items.length;
+
+          let level = '畅通';
+          let index = 1;
+          if (avgSpeed < 10) {
+            level = '严重拥堵';
+            index = 9;
+          } else if (avgSpeed < 20) {
+            level = '拥堵';
+            index = 7;
+          } else if (avgSpeed < 30) {
+            level = '缓行';
+            index = 5;
+          }
+
+          return {
+            index,
+            level,
+            description: `平均速度 ${Math.round(avgSpeed)} km/h`,
+          };
+        }
+
+        return {
+          index: 5,
+          level: '未知',
+          description: '暂无数据',
+        };
+      } catch (error) {
+        console.error('交通指数获取失败:', error);
+        return {
+          index: 5,
+          level: '暂无',
+          description: '获取失败',
+        };
+      }
+    },
+    { ttlMs: 30 * 60 * 1000, refreshAheadMs: 5 * 60 * 1000 }
+  );
+}
+
+/**
+ * 智能搜索地铁站点
+ */
+export async function searchMetroStations(lineName: string, city: string = '天津'): Promise<AmapPlace[]> {
+  return getCachedValue(
+    `metro-search:${city}:${lineName}`,
+    async () => {
+      const keywords = [
+        `${city}${lineName} 地铁站`,
+        `${city}${lineName}`,
+        `${lineName} 地铁站`,
+      ];
+
+      const merged: AmapPlace[] = [];
+      for (const keyword of keywords) {
+        const pageResults = await Promise.all([
+          fetchAmapTextPlaces({ keywords: keyword, city, types: '150700', offset: 25, page: 1 }),
+          fetchAmapTextPlaces({ keywords: keyword, city, types: '150700', offset: 25, page: 2 }),
+        ]);
+        merged.push(...pageResults.flat());
+      }
+
+      const seen = new Set<string>();
+      return merged
+        .filter((place) => /站|地铁|换乘|口/.test(place.name))
+        .filter((place) => {
+          const key = `${place.name}-${place.location.lat.toFixed(5)}-${place.location.lng.toFixed(5)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+    },
+    { ttlMs: 30 * 60 * 1000, refreshAheadMs: 5 * 60 * 1000 }
+  );
+}
+
+/**
+ * 搜索道路/高速相关 POI
+ */
+export async function searchRoadPlaces(keyword: string, city: string = '天津'): Promise<AmapPlace[]> {
+  const places = await fetchAmapTextPlaces({
+    keywords: `${city}${keyword}`,
+    city,
+    offset: 30,
+  });
+
+  return places.filter((place) => /高速|路|桥|立交|收费站|服务区/.test(place.name + place.address));
+}
+
+/**
+ * 通用智能搜索：站点 / 高速 / 区域 POI
+ */
+export async function smartSearchPlaces(keyword: string, city: string = '天津'): Promise<AmapPlace[]> {
+  const trimmed = keyword.trim();
+  if (!trimmed) return [];
+
+  const [metro, road, mixed] = await Promise.all([
+    searchMetroStations(trimmed, city),
+    searchRoadPlaces(trimmed, city),
+    fetchAmapTextPlaces({ keywords: `${city}${trimmed}`, city, offset: 20 }),
+  ]);
+
+  const merged = [...metro, ...road, ...mixed];
+  const seen = new Set<string>();
+
+  return merged.filter((item) => {
+    const key = `${item.name}-${item.location.lat.toFixed(4)}-${item.location.lng.toFixed(4)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -92,37 +248,42 @@ export async function fetchRealTimeTraffic(bounds?: {
   sw: { lat: number; lng: number };
   ne: { lat: number; lng: number };
 }): Promise<TrafficStatus[]> {
-  const apiKey = import.meta.env.VITE_AMAP_API_KEY;
-  if (!apiKey) {
-    return [];
-  }
+  const bbox = bounds
+    ? `${bounds.sw.lng},${bounds.sw.lat},${bounds.ne.lng},${bounds.ne.lat}`
+    : '116.8,38.5,117.8,40';
 
-  try {
-    // 高德地图路况需要使用 Web 服务 API
-    const bbox = bounds
-      ? `${bounds.sw.lng},${bounds.sw.lat},${bounds.ne.lng},${bounds.ne.lat}`
-      : '116.8,38.5,117.8,40'; // 天津周边范围
+  return getCachedValue(
+    `traffic:realtime:${bbox}`,
+    async () => {
+      const apiKey = getAmapApiKey();
+      if (!apiKey) {
+        return [];
+      }
 
-    const response = await fetch(
-      `https://restapi.amap.com/v1/traffic/status?bounding=${bbox}&level=4&key=${apiKey}`
-    );
-    const data = await response.json();
+      try {
+        const response = await fetch(
+          `/api/amap/v1/traffic/status?bounding=${bbox}&level=4&key=${apiKey}`
+        );
+        const data = await response.json();
 
-    if (data.status === '1' && data.trafficinfo) {
-      return data.trafficinfo.map((item: any) => ({
-        roadId: item.roadId,
-        roadName: item.name,
-        speed: item.speed || 0,
-        congestionLevel: getCongestionLevel(item.speed),
-        description: item.direction || '未知方向',
-      }));
-    }
+        if (data.status === '1' && data.trafficinfo) {
+          return data.trafficinfo.map((item: any) => ({
+            roadId: item.roadId,
+            roadName: item.name,
+            speed: item.speed || 0,
+            congestionLevel: getCongestionLevel(item.speed),
+            description: item.direction || '未知方向',
+          }));
+        }
 
-    return [];
-  } catch (error) {
-    console.error('实时路况获取失败:', error);
-    return [];
-  }
+        return [];
+      } catch (error) {
+        console.error('实时路况获取失败:', error);
+        return [];
+      }
+    },
+    { ttlMs: 30 * 60 * 1000, refreshAheadMs: 5 * 60 * 1000 }
+  );
 }
 
 /**
@@ -159,7 +320,7 @@ export async function fetchFloodWarnings(district?: string): Promise<FloodWarnin
  * 获取高速路况
  */
 export async function fetchExpressWayStatus(): Promise<TrafficStatus[]> {
-  const apiKey = import.meta.env.VITE_AMAP_API_KEY;
+  const apiKey = getAmapApiKey();
   if (!apiKey) {
     return [];
   }
@@ -177,7 +338,7 @@ export async function fetchExpressWayStatus(): Promise<TrafficStatus[]> {
     for (const hw of highways) {
       try {
         const response = await fetch(
-          `https://restapi.amap.com/v1/traffic/status?bounding=${hw.bounds}&key=${apiKey}`
+          `/api/amap/v1/traffic/status?bounding=${hw.bounds}&key=${apiKey}`
         );
         const data = await response.json();
 

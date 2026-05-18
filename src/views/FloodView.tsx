@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronLeft, MapPin, AlertCircle, List, Map as MapIcon, BarChart3, Navigation, 
-  Droplets, TrendingUp, ChevronRight, Info
+  Droplets, TrendingUp, ChevronRight, Info, Loader
 } from 'lucide-react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -10,6 +10,8 @@ import {
 } from 'recharts';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { fetchFloodWarnings } from '../services/floodWarningService';
+import { fetchWeatherWarnings, fetchPrecipitationData, assessFloodRisk } from '../services/qweatherService';
 
 // --- 类型定义 ---
 interface FloodPoint {
@@ -22,7 +24,8 @@ interface FloodPoint {
   lat: number;
   lng: number;
   lastUpdate: string;
-  history: { time: string; depth: number }[];
+  description?: string;
+  history?: { time: string; depth: number }[];
 }
 
 interface FloodViewProps {
@@ -166,26 +169,526 @@ const STATISTICS = [
 export default function FloodView({ onBack }: FloodViewProps) {
   const [activeTab, setActiveTab] = useState<'map' | 'list' | 'stats'>('map');
   const [selectedPoint, setSelectedPoint] = useState<FloodPoint | null>(null);
+  const [floodPoints, setFloodPoints] = useState<FloodPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<string>('');
+  const [weatherWarnings, setWeatherWarnings] = useState<any[]>([]);
+  const [precipData, setPrecipData] = useState<any | null>(null);
+  const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high'>('low');
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<{ [key: string]: L.Marker }>({});
 
+  // 默认降级数据（当API不可用时使用）
+  const DEFAULT_FLOOD_POINTS: FloodPoint[] = [
+    // 滨海新区 (2个)
+    {
+      id: 'f1',
+      name: '滨海新区蔡家堡码头下沉通道',
+      district: '滨海新区',
+      severity: 'high',
+      depth: 34.1,
+      predictedDepth: 42.0,
+      lat: 38.95,
+      lng: 117.85,
+      lastUpdate: '14:32',
+      description: '高风险积水点，需要加强排水',
+      history: [
+        { time: '14:00', depth: 28 },
+        { time: '14:15', depth: 30 },
+        { time: '14:30', depth: 34.1 },
+        { time: '14:45', depth: 38 },
+      ]
+    },
+    {
+      id: 'f1b',
+      name: '滨海新区塘沽海河南路立交',
+      district: '滨海新区',
+      severity: 'high',
+      depth: 31.5,
+      predictedDepth: 38.0,
+      lat: 39.00,
+      lng: 117.73,
+      lastUpdate: '14:30',
+      description: '立交低洼处',
+      history: [
+        { time: '14:00', depth: 25 },
+        { time: '14:15', depth: 28 },
+        { time: '14:30', depth: 31.5 },
+        { time: '14:45', depth: 35 },
+      ]
+    },
+    // 西青区 (2个)
+    {
+      id: 'f2',
+      name: '西青区地铁2号线曹庄停车场',
+      district: '西青区',
+      severity: 'high',
+      depth: 22.5,
+      predictedDepth: 25.0,
+      lat: 39.00,
+      lng: 117.00,
+      lastUpdate: '14:31',
+      description: '地下停车场易积水',
+      history: [
+        { time: '14:00', depth: 8 },
+        { time: '14:15', depth: 15 },
+        { time: '14:30', depth: 22.5 },
+        { time: '14:45', depth: 23.5 },
+      ]
+    },
+    {
+      id: 'f2b',
+      name: '西青区中北镇李家屋村',
+      district: '西青区',
+      severity: 'medium',
+      depth: 18.2,
+      predictedDepth: 20.0,
+      lat: 38.95,
+      lng: 116.85,
+      lastUpdate: '14:29',
+      description: '低洼农田',
+      history: [
+        { time: '14:00', depth: 12 },
+        { time: '14:15', depth: 15 },
+        { time: '14:30', depth: 18.2 },
+        { time: '14:45', depth: 19.5 },
+      ]
+    },
+    // 武清区 (2个)
+    {
+      id: 'f3',
+      name: '武清区郑家楼村铁路涵洞',
+      district: '武清区',
+      severity: 'high',
+      depth: 28.4,
+      predictedDepth: 31.0,
+      lat: 39.40,
+      lng: 117.00,
+      lastUpdate: '14:28',
+      description: '铁路涵洞低洼地势',
+      history: [
+        { time: '14:00', depth: 20 },
+        { time: '14:15', depth: 22 },
+        { time: '14:30', depth: 28.4 },
+        { time: '14:45', depth: 29.5 },
+      ]
+    },
+    {
+      id: 'f3b',
+      name: '武清区城关镇新华路',
+      district: '武清区',
+      severity: 'medium',
+      depth: 15.3,
+      predictedDepth: 17.5,
+      lat: 39.38,
+      lng: 116.90,
+      lastUpdate: '14:27',
+      description: '路面低洼',
+      history: [
+        { time: '14:00', depth: 10 },
+        { time: '14:15', depth: 12 },
+        { time: '14:30', depth: 15.3 },
+        { time: '14:45', depth: 16.2 },
+      ]
+    },
+    // 河西区 (2个)
+    {
+      id: 'f4',
+      name: '河西区应急管理局',
+      district: '河西区',
+      severity: 'medium',
+      depth: 5.2,
+      predictedDepth: 3.0,
+      lat: 39.10,
+      lng: 116.90,
+      lastUpdate: '14:33',
+      description: '监测点，水位逐渐下降',
+      history: [
+        { time: '14:00', depth: 8 },
+        { time: '14:15', depth: 6 },
+        { time: '14:30', depth: 5.2 },
+        { time: '14:45', depth: 4.5 },
+      ]
+    },
+    {
+      id: 'f4b',
+      name: '河西区梅江道下沉广场',
+      district: '河西区',
+      severity: 'low',
+      depth: 2.8,
+      predictedDepth: 1.5,
+      lat: 39.08,
+      lng: 117.00,
+      lastUpdate: '14:34',
+      description: '广场积水即将排干',
+      history: [
+        { time: '14:00', depth: 6 },
+        { time: '14:15', depth: 4 },
+        { time: '14:30', depth: 2.8 },
+        { time: '14:45', depth: 1.5 },
+      ]
+    },
+    // 东丽区 (2个)
+    {
+      id: 'f5',
+      name: '东丽区湖滨路交汇口',
+      district: '东丽区',
+      severity: 'medium',
+      depth: 12.8,
+      predictedDepth: 14.0,
+      lat: 39.00,
+      lng: 117.35,
+      lastUpdate: '14:30',
+      description: '路口低洼处',
+      history: [
+        { time: '14:00', depth: 6 },
+        { time: '14:15', depth: 9 },
+        { time: '14:30', depth: 12.8 },
+        { time: '14:45', depth: 13.5 },
+      ]
+    },
+    {
+      id: 'f5b',
+      name: '东丽区军粮城地铁站',
+      district: '东丽区',
+      severity: 'low',
+      depth: 3.5,
+      predictedDepth: 2.0,
+      lat: 39.05,
+      lng: 117.45,
+      lastUpdate: '14:31',
+      description: '地铁站出入口',
+      history: [
+        { time: '14:00', depth: 8 },
+        { time: '14:15', depth: 6 },
+        { time: '14:30', depth: 3.5 },
+        { time: '14:45', depth: 2.0 },
+      ]
+    },
+    // 红桥区 (2个)
+    {
+      id: 'f6',
+      name: '红桥区芦东路地下通道',
+      district: '红桥区',
+      severity: 'medium',
+      depth: 8.5,
+      predictedDepth: 10.2,
+      lat: 39.18,
+      lng: 117.10,
+      lastUpdate: '14:29',
+      description: '地下通道易积水',
+      history: [
+        { time: '14:00', depth: 4 },
+        { time: '14:15', depth: 6 },
+        { time: '14:30', depth: 8.5 },
+        { time: '14:45', depth: 9.2 },
+      ]
+    },
+    {
+      id: 'f6b',
+      name: '红桥区三条石路高架',
+      district: '红桥区',
+      severity: 'low',
+      depth: 4.2,
+      predictedDepth: 2.0,
+      lat: 39.20,
+      lng: 117.15,
+      lastUpdate: '14:32',
+      description: '高架下积水',
+      history: [
+        { time: '14:00', depth: 9 },
+        { time: '14:15', depth: 7 },
+        { time: '14:30', depth: 4.2 },
+        { time: '14:45', depth: 2.0 },
+      ]
+    },
+    // 南开区 (2个)
+    {
+      id: 'f7',
+      name: '南开区广开四马路',
+      district: '南开区',
+      severity: 'low',
+      depth: 1.2,
+      predictedDepth: 0.5,
+      lat: 39.08,
+      lng: 117.13,
+      lastUpdate: '14:33',
+      description: '轻微积水',
+      history: [
+        { time: '14:00', depth: 3 },
+        { time: '14:15', depth: 2 },
+        { time: '14:30', depth: 1.2 },
+        { time: '14:45', depth: 0.5 },
+      ]
+    },
+    {
+      id: 'f7b',
+      name: '南开区鼓楼广场',
+      district: '南开区',
+      severity: 'low',
+      depth: 0.8,
+      predictedDepth: 0.0,
+      lat: 39.10,
+      lng: 117.08,
+      lastUpdate: '14:34',
+      description: '积水即将完全排干',
+      history: [
+        { time: '14:00', depth: 2 },
+        { time: '14:15', depth: 1 },
+        { time: '14:30', depth: 0.8 },
+        { time: '14:45', depth: 0.0 },
+      ]
+    },
+    // 河东区 (1个)
+    {
+      id: 'f8',
+      name: '河东区世纪广场地下停车场',
+      district: '河东区',
+      severity: 'medium',
+      depth: 11.5,
+      predictedDepth: 12.0,
+      lat: 39.12,
+      lng: 117.22,
+      lastUpdate: '14:30',
+      description: '地下停车场',
+      history: [
+        { time: '14:00', depth: 8 },
+        { time: '14:15', depth: 10 },
+        { time: '14:30', depth: 11.5 },
+        { time: '14:45', depth: 12.0 },
+      ]
+    },
+    // 河北区 (1个)
+    {
+      id: 'f9',
+      name: '河北区金狮广场',
+      district: '河北区',
+      severity: 'low',
+      depth: 2.3,
+      predictedDepth: 1.0,
+      lat: 39.17,
+      lng: 117.18,
+      lastUpdate: '14:32',
+      description: '广场低洼处',
+      history: [
+        { time: '14:00', depth: 5 },
+        { time: '14:15', depth: 4 },
+        { time: '14:30', depth: 2.3 },
+        { time: '14:45', depth: 1.0 },
+      ]
+    },
+    // 和平区 (1个)
+    {
+      id: 'f10',
+      name: '和平区南京路下沉广场',
+      district: '和平区',
+      severity: 'low',
+      depth: 0.5,
+      predictedDepth: 0.0,
+      lat: 39.05,
+      lng: 117.20,
+      lastUpdate: '14:35',
+      description: '轻微积水即将排干',
+      history: [
+        { time: '14:00', depth: 2 },
+        { time: '14:15', depth: 1 },
+        { time: '14:30', depth: 0.5 },
+        { time: '14:45', depth: 0.0 },
+      ]
+    },
+    // 北辰区 (1个)
+    {
+      id: 'f11',
+      name: '北辰区辰阳路高架',
+      district: '北辰区',
+      severity: 'low',
+      depth: 6.8,
+      predictedDepth: 5.0,
+      lat: 39.28,
+      lng: 117.12,
+      lastUpdate: '14:28',
+      description: '高架下积水',
+      history: [
+        { time: '14:00', depth: 12 },
+        { time: '14:15', depth: 10 },
+        { time: '14:30', depth: 6.8 },
+        { time: '14:45', depth: 5.0 },
+      ]
+    },
+    // 津南区 (1个)
+    {
+      id: 'f12',
+      name: '津南区小站路低洼地',
+      district: '津南区',
+      severity: 'medium',
+      depth: 19.5,
+      predictedDepth: 21.0,
+      lat: 38.92,
+      lng: 117.15,
+      lastUpdate: '14:29',
+      description: '农业灌溉区低洼',
+      history: [
+        { time: '14:00', depth: 14 },
+        { time: '14:15', depth: 16 },
+        { time: '14:30', depth: 19.5 },
+        { time: '14:45', depth: 21.0 },
+      ]
+    },
+    // 宝坻区 (1个)
+    {
+      id: 'f13',
+      name: '宝坻区城北部新城',
+      district: '宝坻区',
+      severity: 'low',
+      depth: 7.2,
+      predictedDepth: 5.5,
+      lat: 39.52,
+      lng: 117.35,
+      lastUpdate: '14:31',
+      description: '开发区低洼',
+      history: [
+        { time: '14:00', depth: 14 },
+        { time: '14:15', depth: 11 },
+        { time: '14:30', depth: 7.2 },
+        { time: '14:45', depth: 5.5 },
+      ]
+    },
+    // 静海区 (1个)
+    {
+      id: 'f14',
+      name: '静海区独流镇',
+      district: '静海区',
+      severity: 'medium',
+      depth: 16.8,
+      predictedDepth: 18.5,
+      lat: 38.70,
+      lng: 117.18,
+      lastUpdate: '14:30',
+      description: '镇区道路',
+      history: [
+        { time: '14:00', depth: 12 },
+        { time: '14:15', depth: 14 },
+        { time: '14:30', depth: 16.8 },
+        { time: '14:45', depth: 18.5 },
+      ]
+    },
+    // 蓟州区 (1个)
+    {
+      id: 'f15',
+      name: '蓟州区县城主干道',
+      district: '蓟州区',
+      severity: 'low',
+      depth: 9.5,
+      predictedDepth: 8.0,
+      lat: 40.00,
+      lng: 117.42,
+      lastUpdate: '14:32',
+      description: '山区县城',
+      history: [
+        { time: '14:00', depth: 18 },
+        { time: '14:15', depth: 14 },
+        { time: '14:30', depth: 9.5 },
+        { time: '14:45', depth: 8.0 },
+      ]
+    },
+    // 宁河区 (1个)
+    {
+      id: 'f16',
+      name: '宁河区滨河新城',
+      district: '宁河区',
+      severity: 'low',
+      depth: 5.2,
+      predictedDepth: 3.5,
+      lat: 39.42,
+      lng: 117.50,
+      lastUpdate: '14:33',
+      description: '城市积涝点',
+      history: [
+        { time: '14:00', depth: 10 },
+        { time: '14:15', depth: 8 },
+        { time: '14:30', depth: 5.2 },
+        { time: '14:45', depth: 3.5 },
+      ]
+    },
+  ];
+
+  // 加载真实数据
+  useEffect(() => {
+    const loadFloodData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // 并行获取三种数据
+        const [floodData, weatherWarns, riskAssess] = await Promise.all([
+          fetchFloodWarnings(),
+          fetchWeatherWarnings(),
+          assessFloodRisk(),
+        ]);
+        
+        // 处理积涝数据
+        if (floodData && floodData.length > 0) {
+          setFloodPoints(floodData);
+          console.log(`✅ 积涝监测：${floodData.length} 个预警点`);
+        } else {
+          setFloodPoints(DEFAULT_FLOOD_POINTS);
+          console.log('⚠️ 积涝数据不可用，使用本地数据');
+        }
+        
+        // 处理天气预警数据
+        if (weatherWarns && weatherWarns.length > 0) {
+          setWeatherWarnings(weatherWarns);
+          console.log(`✅ 气象预警：${weatherWarns.length} 条暴雨预警`);
+        }
+        
+        // 处理降水数据
+        if (riskAssess?.precipData) {
+          setPrecipData(riskAssess.precipData);
+          setRiskLevel(riskAssess.riskLevel);
+          console.log(`✅ 降水监测：${riskAssess.precipData.precipitation}mm，风险等级${riskAssess.riskLevel}`);
+        }
+        
+        // 更新时间戳
+        const now = new Date();
+        setLastUpdate(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
+      } catch (err) {
+        console.error('加载数据失败:', err);
+        setError('数据加载失败，使用本地数据');
+        setFloodPoints(DEFAULT_FLOOD_POINTS);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadFloodData();
+  }, []);
+
   // 计算统计数据
   const stats = useMemo(() => {
-    const high = FLOOD_POINTS.filter(p => p.severity === 'high').length;
-    const medium = FLOOD_POINTS.filter(p => p.severity === 'medium').length;
-    const low = FLOOD_POINTS.filter(p => p.severity === 'low').length;
-    return { high, medium, low, total: FLOOD_POINTS.length };
-  }, []);
+    const high = floodPoints.filter(p => p.severity === 'high').length;
+    const medium = floodPoints.filter(p => p.severity === 'medium').length;
+    const low = floodPoints.filter(p => p.severity === 'low').length;
+    return { high, medium, low, total: floodPoints.length };
+  }, [floodPoints]);
 
   // 初始化Leaflet地图
   useEffect(() => {
-    if (activeTab !== 'map') return;
+    if (activeTab !== 'map') {
+      // 当切换离开地图时，清理地图实例
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+      return;
+    }
     
-    // 如果地图已经初始化过，就不再创建
-    if (mapRef.current) return;
-
+    // 如果地图容器不存在，返回
     const mapContainer = document.getElementById('flood-map');
     if (!mapContainer) return;
+
+    // 如果地图已经存在，不需要重新创建
+    if (mapRef.current) return;
 
     // 天津中心坐标
     const tianjinCenter: [number, number] = [39.0842, 117.2008];
@@ -216,7 +719,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
     };
 
     // 添加监测点标记
-    FLOOD_POINTS.forEach((point) => {
+    floodPoints.forEach((point) => {
       const iconColor = getSeverityColor(point.severity);
 
       // 创建自定义图标HTML
@@ -267,14 +770,11 @@ export default function FloodView({ onBack }: FloodViewProps) {
 
     mapRef.current = map;
 
-    // 清理函数
+    // 清理函数：离开地图时清理
     return () => {
-      if (mapRef.current) {
-        map.remove();
-        mapRef.current = null;
-      }
+      // 不在这里删除地图，让useEffect的开头来处理
     };
-  }, [activeTab]);
+  }, [activeTab, floodPoints]);
 
   return (
     <div className="fixed inset-0 bg-white z-[60] flex flex-col overflow-hidden font-sans">
@@ -292,7 +792,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
         </div>
         <div className="text-right">
           <p className="text-[10px] text-on-surface-variant">最新更新</p>
-          <p className="text-xs font-semibold text-primary">14:32</p>
+          <p className="text-xs font-semibold text-primary">{lastUpdate || '加载中...'}</p>
         </div>
       </header>
 
@@ -315,13 +815,104 @@ export default function FloodView({ onBack }: FloodViewProps) {
             </button>
           ))}
         </div>
+        {/* 数据源提示 */}
+        {!loading && (
+          <div className="mt-2 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 text-blue-600 mt-0.5 shrink-0" />
+            <p className="text-xs text-blue-700">
+              {floodPoints.length > 0 ? (
+                error ? '使用本地数据 (API 不可用)' : '实时数据已加载'
+              ) : '无积涝预警数据'}
+            </p>
+          </div>
+        )}
+        
+        {/* 和风天气数据显示 */}
+        {!loading && (precipData || weatherWarnings.length > 0) && (
+          <div className="mt-2 space-y-2">
+            {/* 实时降水数据 */}
+            {precipData && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className={`px-3 py-2 rounded-xl border flex items-center gap-2 ${
+                  riskLevel === 'high'
+                    ? 'bg-red-50 border-red-200'
+                    : riskLevel === 'medium'
+                    ? 'bg-orange-50 border-orange-200'
+                    : 'bg-green-50 border-green-200'
+                }`}
+              >
+                <Droplets
+                  className={`w-4 h-4 shrink-0 ${
+                    riskLevel === 'high'
+                      ? 'text-red-600'
+                      : riskLevel === 'medium'
+                      ? 'text-orange-600'
+                      : 'text-green-600'
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  <p
+                    className={`text-xs font-semibold ${
+                      riskLevel === 'high'
+                        ? 'text-red-700'
+                        : riskLevel === 'medium'
+                        ? 'text-orange-700'
+                        : 'text-green-700'
+                    }`}
+                  >
+                    降水量: {precipData.precipitation.toFixed(1)}mm · {precipData.intensity === 'extreme' ? '极端' : precipData.intensity === 'heavy' ? '强' : precipData.intensity === 'moderate' ? '中' : '弱'}降水
+                  </p>
+                </div>
+              </motion.div>
+            )}
+            
+            {/* 气象预警信息 */}
+            {weatherWarnings.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="px-3 py-2 rounded-xl bg-red-50 border border-red-200"
+              >
+                <p className="text-xs font-semibold text-red-700">
+                  ⚠️ 气象预警: {weatherWarnings.length} 条
+                </p>
+                <div className="mt-1 space-y-1">
+                  {weatherWarnings.slice(0, 2).map((w, idx) => (
+                    <p key={idx} className="text-xs text-red-600 line-clamp-1">
+                      {w.title}
+                    </p>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 主内容区 */}
       <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        <AnimatePresence mode="wait">
-          {/* 地图视图 */}
-          {activeTab === 'map' && (
+        {loading && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center space-y-3">
+              <Loader className="w-8 h-8 text-primary animate-spin mx-auto" />
+              <p className="text-sm text-on-surface-variant">加载积涝预警数据中...</p>
+            </div>
+          </div>
+        )}
+        {!loading && floodPoints.length === 0 && (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center space-y-2">
+              <Droplets className="w-12 h-12 text-on-surface-variant/30 mx-auto" />
+              <p className="text-sm text-on-surface-variant">暂无积涝预警数据</p>
+            </div>
+          </div>
+        )}
+        {!loading && floodPoints.length > 0 && (
+          <AnimatePresence mode="wait">
+            {/* 地图视图 */}
+            {activeTab === 'map' && (
             <motion.div
               key="map"
               initial={{ opacity: 0, y: 8 }}
@@ -367,7 +958,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
 
               {/* 高风险积水点卡片 */}
               <div className="space-y-2">
-                {FLOOD_POINTS.filter(p => p.severity === 'high').map((point) => (
+                {floodPoints.filter(p => p.severity === 'high').map((point) => (
                   <motion.button
                     key={point.id}
                     initial={{ opacity: 0, y: 8 }}
@@ -401,7 +992,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
               exit={{ opacity: 0, y: -8 }}
               className="space-y-3"
             >
-              {FLOOD_POINTS.map((point, idx) => (
+              {floodPoints.map((point, idx) => (
                 <motion.button
                   key={point.id}
                   initial={{ opacity: 0, y: 10 }}
@@ -532,6 +1123,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
             </motion.div>
           )}
         </AnimatePresence>
+        )}
       </main>
 
       {/* 详情侧栏 */}
@@ -585,7 +1177,7 @@ export default function FloodView({ onBack }: FloodViewProps) {
               </div>
 
               {/* 历史数据图 */}
-              {selectedPoint.history.length > 0 && (
+              {selectedPoint.history && selectedPoint.history.length > 0 && (
                 <div className="rounded-2xl bg-white border border-on-surface/10 p-4">
                   <h3 className="text-xs font-semibold text-on-surface mb-3 uppercase tracking-wide">水位演变</h3>
                   <div className="h-32">

@@ -5,6 +5,8 @@ import { chatWithAI } from '../services/aiService';
 import { chatHistoryService, ChatMessage } from '../services/chatHistoryService';
 import { fetchTemperatureTrend } from '../services/weatherService';
 import { fetchLatestOfficialWarning } from '../services/officialWarningService';
+import boyAvatar from '../assets/avatars/boy.png';
+import girlAvatar from '../assets/avatars/girl.png';
 
 type ChatPageProps = {
   onClose: () => void;
@@ -583,8 +585,12 @@ export default function ChatPage({ onClose, initialInput, assistantName = '津�
               animate={{ opacity: 1 }}
               className="flex flex-col items-center justify-center h-48 text-center"
             >
-              <div className="text-5xl mb-3">🌤️</div>
-              <h2 className="text-base font-black text-slate-700 mb-1">有什么可以帮您？</h2>
+              <img
+                src={assistantName === '津小天' ? boyAvatar : girlAvatar}
+                alt={assistantName}
+                className="w-24 h-auto mb-3 drop-shadow-lg"
+              />
+              <h2 className="text-base font-black text-slate-700 mb-1">你好！我是{assistantName}</h2>
               <p className="text-xs text-slate-400 max-w-[220px]">点击上方快捷按钮，或在下方输入问题</p>
             </motion.div>
           ) : (
@@ -597,9 +603,11 @@ export default function ChatPage({ onClose, initialInput, assistantName = '津�
                   className={`flex gap-2 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {message.type === 'assistant' && (
-                    <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-white text-xs font-black mt-1">
-                      {assistantName.includes('天') ? '天' : '晴'}
-                    </div>
+                    <img
+                      src={assistantName === '津小天' ? boyAvatar : girlAvatar}
+                      alt={assistantName}
+                      className="shrink-0 w-9 h-9 rounded-full object-cover border-2 border-white shadow-md mt-0.5"
+                    />
                   )}
                   <div className={`max-w-[85%] ${message.type === 'user' ? '' : ''}`}>
                     {message.type === 'user' ? (
@@ -632,9 +640,11 @@ export default function ChatPage({ onClose, initialInput, assistantName = '津�
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-2 justify-start"
                 >
-                  <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center text-white text-xs font-black mt-1">
-                    {assistantName.includes('天') ? '天' : '晴'}
-                  </div>
+                  <img
+                    src={assistantName === '津小天' ? boyAvatar : girlAvatar}
+                    alt={assistantName}
+                    className="shrink-0 w-9 h-9 rounded-full object-cover border-2 border-white shadow-md mt-0.5"
+                  />
                   <div className="bg-white border border-slate-100 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
                     <div className="flex gap-1.5 items-center h-5">
                       <div className="w-2 h-2 rounded-full bg-blue-400 animate-bounce" />

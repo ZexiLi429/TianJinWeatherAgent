@@ -13,7 +13,7 @@ import FloodView from './views/FloodView';
 import LiveWeatherView from './views/LiveWeatherView';
 import ScienceView from './views/ScienceView';
 import MountainView from './views/MountainView';
-import TrafficView from './views/TrafficView';
+import TrafficRealtimeMetroView from './views/TrafficRealtimeMetroView';
 import ConventionalWeatherView from './views/ConventionalWeatherView';
 import RadarView from './views/RadarView';
 import TourismView from './views/TourismView';
@@ -66,7 +66,7 @@ export default function App() {
       case 'mountain':
         return <MountainView onBack={() => setActiveView('weather')} />;
       case 'traffic':
-        return <TrafficView onBack={() => setActiveView('weather')} />;
+        return <TrafficRealtimeMetroView onBack={() => setActiveView('weather')} />;
       case 'eco':
         return <EcoView />;
       case 'conventional':

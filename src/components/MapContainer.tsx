@@ -38,6 +38,7 @@ export default function MapContainer({
   mapTypeId = 'roadmap'
 }: MapContainerProps) {
   const [isReady, setIsReady] = useState(false);
+  const [tileStatus, setTileStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   
   // 使用 Esri 的免费卫星图服务作为实景图
   const satelliteUrl = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}";
@@ -45,7 +46,7 @@ export default function MapContainer({
   const streetUrl = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 
   return (
-    <div className={className + " relative z-0"}>
+    <div className={className + " relative z-0 overflow-hidden rounded-xl bg-[linear-gradient(135deg,#eff6ff_0%,#f8fafc_45%,#eef2ff_100%)]"}>
       <LeafletMap 
         center={center} 
         zoom={zoom} 
@@ -58,14 +59,18 @@ export default function MapContainer({
         <TileLayer
           attribution='&copy; OpenStreetMap contributors &copy; Esri'
           url={mapTypeId === 'satellite' ? satelliteUrl : streetUrl}
+          eventHandlers={{
+            load: () => setTileStatus('ready'),
+            tileerror: () => setTileStatus('failed'),
+          }}
         />
         {children}
       </LeafletMap>
 
-      {!isReady && (
+      {(tileStatus !== 'ready' || !isReady) && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0b0c1b]/75 backdrop-blur-sm text-white">
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium">
-            地图加载中...
+            {tileStatus === 'failed' ? '底图暂不可用，已保留监测点结构' : '地图加载中...'}
           </div>
         </div>
       )}

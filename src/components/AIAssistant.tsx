@@ -16,10 +16,36 @@ const CHARACTERS = [
   }
 ];
 
-function getGreetingText(name: string) {
-  return name === '津小天'
-    ? '我是津小天，请问有什么可以帮您？'
-    : '我是津小晴，请问有什么可以帮您？';
+// 津小天（男娃）的专属台词
+const BOY_MESSAGES = [
+  '我是津小天，有啥问题尽管问！',
+  '今天天气怎么样？来问我吧！',
+  '出行路况有更新，点我查查！',
+  '暴雨来了？我帮你分析积涝风险！',
+  '最新气象预警，我为你播报！',
+  '要去哪玩？我帮你查天气！',
+  '今天适合开车出门吗？问我！',
+  '风大雨大，出门注意安全哦！',
+  '气温骤降，记得加件衣服哦！',
+  '交通哨兵在线，随时为你服务！',
+];
+
+// 津小晴（女娃）的专属台词
+const GIRL_MESSAGES = [
+  '我是津小晴，请问有什么可以帮您～',
+  '今天天气不错哦，要出去逛逛吗？',
+  '出门前记得看看实时路况哟！',
+  '最新预警提示，请注意安全出行～',
+  '有任何问题，随时问津小晴哦！',
+  '要去旅游吗？我帮你查好天气啦～',
+  '今天降水概率多少？来问我吧！',
+  '穿多穿少我来帮你决定，问我！',
+  '津小晴在线，气象出行全搞定～',
+  '雨天路滑，开车要小心哦！',
+];
+
+function getMessages(name: string) {
+  return name === '津小天' ? BOY_MESSAGES : GIRL_MESSAGES;
 }
 
 interface AIAssistantProps {
@@ -37,61 +63,35 @@ export default function AIAssistant({
   }, []);
   const [showBubble, setShowBubble] = useState(true);
   const [inputValue, setInputValue] = useState('');
-  const [assistantReply, setAssistantReply] = useState(() => (initialMessage && initialMessage !== '有什么可以帮您？' ? initialMessage : getGreetingText(character.name)));
+  const [msgIndex, setMsgIndex] = useState(0);
+  const [assistantReply, setAssistantReply] = useState<string>('');
   const [isSending, setIsSending] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const hideTimerRef = useRef<number | null>(null);
-  const randomBubbleTimerRef = useRef<number | null>(null);
   const dragBoundsRef = useRef<HTMLDivElement | null>(null);
   const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
 
+  // 初始设置第一条消息
   useEffect(() => {
-    const startHideTimer = () => {
-      if (hideTimerRef.current) {
-        window.clearTimeout(hideTimerRef.current);
-      }
-      hideTimerRef.current = window.setTimeout(() => {
-        setShowBubble(false);
-      }, 2000);
-    };
-
-    const scheduleRandomBubble = () => {
-      if (randomBubbleTimerRef.current) {
-        window.clearTimeout(randomBubbleTimerRef.current);
-      }
-
-      const delay = 12000 + Math.floor(Math.random() * 8000);
-      randomBubbleTimerRef.current = window.setTimeout(() => {
-        setAssistantReply(getGreetingText(character.name));
-        setShowBubble(true);
-        startHideTimer();
-        scheduleRandomBubble();
-      }, delay);
-    };
-
-    setAssistantReply(getGreetingText(character.name));
+    const messages = getMessages(character.name);
+    setAssistantReply(messages[0]);
     setShowBubble(true);
-    startHideTimer();
-    scheduleRandomBubble();
+  }, [character.name]);
 
-    return () => {
-      if (hideTimerRef.current) {
-        window.clearTimeout(hideTimerRef.current);
-      }
-      if (randomBubbleTimerRef.current) {
-        window.clearTimeout(randomBubbleTimerRef.current);
-      }
-    };
+  // 定时轮播消息（每6秒换一条）
+  useEffect(() => {
+    const messages = getMessages(character.name);
+    const interval = setInterval(() => {
+      setMsgIndex(prev => {
+        const next = (prev + 1) % messages.length;
+        setAssistantReply(messages[next]);
+        return next;
+      });
+    }, 6000);
+    return () => clearInterval(interval);
   }, [character.name]);
 
   const popBubble = () => {
     setShowBubble(true);
-    if (hideTimerRef.current) {
-      window.clearTimeout(hideTimerRef.current);
-    }
-    hideTimerRef.current = window.setTimeout(() => {
-      setShowBubble(false);
-    }, 2000);
   };
 
   const handleSend = async () => {
@@ -161,13 +161,14 @@ export default function AIAssistant({
         className="absolute right-3 bottom-[92px] md:right-5 md:bottom-[100px] pointer-events-none cursor-grab active:cursor-grabbing"
       >
         <div className="relative pointer-events-auto select-none">
-          <AnimatePresence>
+          <AnimatePresence mode="wait">
             {showBubble && (
               <motion.div
-                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                key={assistantReply}
+                initial={{ opacity: 0, y: 6, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                transition={{ duration: 0.2 }}
+                exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                transition={{ duration: 0.3 }}
                 className="absolute right-2 -top-12 whitespace-nowrap bg-white text-[#1f2937] text-xs font-medium px-3 py-1.5 rounded-xl shadow-lg border border-slate-200"
               >
                 {assistantReply}
